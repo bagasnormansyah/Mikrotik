@@ -1,0 +1,25 @@
+LIMITASI DHCP OTOMATIS DI SIMPLE QUEUE
+
+
+====================Menggunakan-Parent=======================
+:local queueName "Client - $leaseActMAC";
+:if ($leaseBound = "1") do={
+    /queue simple add name=$queueName target=($leaseActIP . "/32") max-limit=1M/2M parent="IP=>192.168.88.0/24" comment=[/ip dhcp-server lease get [find where active-mac-address=$leaseActMAC && active-address=$leaseActIP] host-name];
+} else={
+    /queue simple remove $queueName
+}
+
+
+====================Tanpa-Parent=======================
+:local queueName "Client- $leaseActMAC";
+:if ($leaseBound = "1") do={
+    /queue simple add name=$queueName target=($leaseActIP . "/32") limit-at=512k/769k max-limit=512k/1024k comment=[/ip dhcp-server lease get [find where active-mac-address=$leaseActMAC && active-address=$leaseActIP] host-name];
+} else={
+    /queue simple remove $queueName
+}
+
+/queue simple
+add name="-> ALL CONNECTION" packet-marks=\
+    no-mark,up-browsing-b,up-browsing-s,down-sosmed,down-http.https,down-streaming,down-paket queue=\
+    default/default target=192.168.88.0/24
+add name="IP=>192.168.88.0/24" parent="-> ALL CONNECTION" queue=default/default target=192.168.88.0/24
