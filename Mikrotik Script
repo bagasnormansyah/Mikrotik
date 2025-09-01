@@ -1,0 +1,55 @@
+Script dhcp 
+
+#Menggunakan-Parent
+
+:local queueName "Client - $leaseActMAC";
+:if ($leaseBound = "1") do={
+    /queue simple add name=$queueName target=($leaseActIP . "/32") max-limit=1M/2M parent="IP=>192.168.88.0/24" comment=[/ip dhcp-server lease get [find where active-mac-address=$leaseActMAC && active-address=$leaseActIP] host-name];
+} else={
+    /queue simple remove $queueName
+}
+
+
+#Tanpa-Parent
+
+:local queueName "Client- $leaseActMAC";
+:if ($leaseBound = "1") do={
+    /queue simple add name=$queueName target=($leaseActIP . "/32") limit-at=512k/769k max-limit=512k/1024k comment=[/ip dhcp-server lease get [find where active-mac-address=$leaseActMAC && active-address=$leaseActIP] host-name];
+} else={
+    /queue simple remove $queueName
+}
+
+/queue simple
+add name="-> ALL CONNECTION" packet-marks=\
+    no-mark,up-browsing-b,up-browsing-s,down-sosmed,down-http.https,down-streaming,down-paket queue=\
+    default/default target=192.168.88.0/24
+add name="IP=>192.168.88.0/24" parent="-> ALL CONNECTION" queue=default/default target=192.168.88.0/24
+
+#MAC Static
+
+:local mac $leaseActMAC
+:local ip $leaseActIP
+
+# Buat MAC static hanya jika belum ada
+:if (($leaseBound = "1") && ($mac != "") && ($ip != "")) do={
+    :if ([:len [/ip dhcp-server lease find where mac-address=$mac disabled=no static=yes]] = 0) do={
+        /ip dhcp-server lease make-static [find where active-mac-address=$mac]
+    }
+}
+
+
+#DHCP To Addres list
+
+:local listName "dhcp-clients"
+:if ($leaseBound = "1") do={
+    # Tambah IP ke address list jika belum ada
+    :if ([:len [/ip firewall address-list find list=$listName address=$leaseActIP]] = 0) do={
+        /ip firewall address-list add list=$listName address=$leaseActIP comment=("DHCP client " . $leaseActMAC)
+    }
+} else={
+    # Hapus IP dari address list jika ada
+    :local addrListID [/ip firewall address-list find list=$listName address=$leaseActIP]
+    :if ([:len $addrListID] > 0) do={
+        /ip firewall address-list remove $addrListID
+    }
+}
