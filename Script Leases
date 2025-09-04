@@ -1,0 +1,81 @@
+    :local ip $leaseActIP
+    :local mac $leaseActMAC
+    :local hostName [/ip dhcp-server lease get [find where active-address=$ip && active-mac-address=$mac] host-name]
+
+    # --- Fungsi: tentukan kelompok & limit berdasarkan hostname ---
+    :local group ""
+    :local bandwidthLimit ""
+    :local limitAt ""
+
+    # Handle empty hostname or unknown devices
+    :if ([:len $hostName] = 0) do={
+        :set hostName "Unknown-Device"
+    }
+
+        # Kelompok Laptop 
+        :if ([:find $hostName "PC"] >= 0 || [:find $hostName "iMac"] >= 0 || [:find $hostName "MacBook-Pro"] >= 0 || [:find $hostName "MacBook-Air"] >= 0 || [:find $hostName "MacBook"] >= 0 || [:find $hostName "DESKTOP"] >= 0) do={
+        :set group "koneksi-browsing"
+        :set bandwidthLimit "150M/150M"
+        :set limitAt "2.5M/2.5M"
+
+    } else={
+
+        # Kelompok Smartphone 
+        :if ([:find $hostName "POCO"] >= 0 || [:find $hostName "iPhone"] >= 0 || [:find $hostName "iPad"] >= 0 || [:find $hostName "LenovoTab"] >= 0 || [:find $hostName "Galaxy-Tab"] >= 0 || [:find $hostName "Redmi"] >= 0 || [:find $hostName "HUAWEI"] >= 0 || [:find $hostName "motorola"] >= 0 || [:find $hostName "Infinix"] >= 0 || [:find $hostName "TECNO"] >= 0 || [:find $hostName "Galaxy"] >= 0 || [:find $hostName "SM"] >= 0 || [:find $hostName "android"] >= 0 || [:find $hostName "vivo"] >= 0 || [:find $hostName "OPPO"] >= 0 || [:find $hostName "realme"] >= 0) do={
+            :set group "koneksi-browsing"
+            :set bandwidthLimit "150M/150M"
+            :set limitAt "1M/1M"
+
+        } else={
+
+            # Kelompok Other (queue tetap dhcp-Other, address-list ikut dhcp-Smartphone)
+            :set group "koneksi-browsing"
+            :set bandwidthLimit "150M/150M"
+            :set limitAt "1M/1M"
+        }
+    }
+
+            # Tambahkan simple queue jika belum adax
+            :local queueName ($group . " - " . $hostName . " - ". $ip)
+            :if ([/queue simple find name=$queueName] = "") do={
+                /queue simple add name=$queueName target=($ip . "/32") \
+                    max-limit=$bandwidthLimit limit-at=$limitAt parent="Parent"
+    }
+
+
+
+#Scheduler
+# Script Scheduler: Cleanup Queue untuk user yang sudah tidak aktif
+:foreach qId in=[/queue simple find] do={
+
+    :local qName [/queue simple get $qId name]
+
+    # Hanya proses queue yang format namanya "group - hostname - ip"
+    :if ([:len [:find $qName " - "]] > 0) do={
+
+        # Pisahkan menjadi 3 bagian: Group - Hostname - IP
+        :local firstDash [:find $qName " - "]
+        :local secondDash [:find $qName " - " ($firstDash + 1)]
+
+        :local group [:pick $qName 0 $firstDash] 
+        :local hostName [:pick $qName ($firstDash + 3) $secondDash]
+        :local ip [:pick $qName ($secondDash + 3) [:len $qName]]
+
+        # Cari lease berdasarkan IP (lebih aman daripada host-name)
+        :local leaseId [/ip dhcp-server lease find where active-address=$ip]
+
+        :if ([:len $leaseId] > 0) do={
+            :local bound [/ip dhcp-server lease get $leaseId status]
+
+            # Jika lease tidak bound, hapus queue
+            :if ($bound != "bound") do={
+                :log info ("[CLEANUP] Queue " . $qName . " dihapus karena lease " . $ip . " tidak bound.")
+                /queue simple remove $qId
+            }
+        } else={
+            # Kalau lease tidak ditemukan, hapus queue
+            :log info ("[CLEANUP] Queue " . $qName . " dihapus karena lease " . $ip . " tidak ditemukan.")
+            /queue simple remove $qId
+        }
+    }
+}
